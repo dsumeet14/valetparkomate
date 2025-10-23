@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SuperAdmin Dashboard - Valet System</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    /* Local tweaks */
+    form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-top: 8px;
+    }
+    form input {
+      flex: 1;
+      min-width: 120px;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+    }
+    .table-wrapper {
+      width: 100%;
+      overflow-x: auto;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid #e6e9ef;
+      padding: 10px 12px;
+      text-align: left;
+    }
+    th {
+      background: #f9fafb;
+      font-weight: 600;
+    }
+    @media (max-width: 768px) {
+      form { flex-direction: column; align-items: stretch; }
+      form input, form button { width: 100%; }
+      th, td { font-size: 13px; padding: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header card">
+      <div class="h-title">
+        <div class="logo">SA</div>
+        <div>
+          <h3 class="h1">SuperAdmin Dashboard</h3>
+          <div class="small">Valet System</div>
+        </div>
+      </div>
+      <div class="small" style="text-align:right">
+        <p id="welcome"></p>
+        <button id="logoutBtn" class="btn secondary">Logout</button>
+      </div>
+    </header>
+
+    <!-- Site Limits -->
+    <div class="card">
+      <h2>Set Site Limit</h2>
+      <form id="setLimitForm">
+        <input type="number" name="site_no" placeholder="Site No" required />
+        <input type="number" name="max_users" placeholder="Max Users" required />
+        <button type="submit" class="btn">Set Limit</button>
+      </form>
+      <div id="setLimitMsg" class="small"></div>
+    </div>
+
+    <!-- View All Sites -->
+    <div class="card">
+      <h2>All Sites</h2>
+      <div class="table-wrapper">
+        <table id="sitesTable">
+          <thead>
+            <tr>
+              <th>Site No</th>
+              <th>Current Users</th>
+              <th>Max Users</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">Parkomate • SuperAdmin</div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="./config.js"></script>
+
+  <script src="./scripts.js"></script>
+  <script>
+    const superadmin_id = localStorage.getItem('id');
+    document.getElementById('welcome').innerText =
+      `Logged in as SuperAdmin (${superadmin_id})`;
+
+    // Set Site Limit
+    document.getElementById('setLimitForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      const payload = {
+        site_no: formData.get('site_no'),
+        max_users: formData.get('max_users')
+      };
+
+      const res = await fetch('${window.APP_CONFIG.API_BASE_URL}/api/set-site-limit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const result = await res.json();
+      document.getElementById('setLimitMsg').innerText = result.message;
+      loadSites();
+    });
+
+    // Load All Sites
+    async function loadSites() {
+      const res = await fetch('${window.APP_CONFIG.API_BASE_URL}/api/get-sites');
+      const rows = await res.json();
+      const tbody = document.querySelector('#sitesTable tbody');
+      tbody.innerHTML = '';
+      rows.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${r.site_no}</td>
+          <td>${r.current_users ?? 0}</td>
+          <td>${r.max_users ?? 'Unlimited'}</td>
+          <td><button class="btn" onclick="goToAdmin(${r.site_no})">Open Admin</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Navigate to that site’s admin panel
+    function goToAdmin(site_no) {
+      window.location.href = "/site_" + site_no + "/admin.html";
+    }
+
+    loadSites();
+    setInterval(loadSites, 5000);
+  </script>
+</body>
+</html>

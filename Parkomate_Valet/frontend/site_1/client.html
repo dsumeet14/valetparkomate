@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Client Dashboard - Site 1</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <style>
+    /* Local adjustments for client view */
+    #carDetails p {
+      margin: 6px 0;
+      font-size: 15px;
+    }
+
+    #carDetails strong {
+      color: #111827;
+    }
+
+    @media (max-width: 768px) {
+      #carDetails p {
+        font-size: 14px;
+      }
+      #requestBtn {
+        width: 100%;
+        justify-content: center;
+        margin-top: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header card">
+      <div class="h-title">
+        <div class="logo">CL</div>
+        <div>
+          <h3 class="h1">Client View</h3>
+          <div class="small">Track your car</div>
+        </div>
+      </div>
+      <div class="small">Site 1 • Opened via valet link</div>
+    </header>
+
+    <!-- Car Details -->
+    <div class="card" style="margin-top: 16px">
+      <div id="carDetails" class="small">Loading...</div>
+      <div style="margin-top: 14px; display:flex; flex-wrap:wrap; gap:8px;">
+        <button id="requestBtn" class="btn" style="display:none">
+          Request Car Out
+        </button>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">Parkomate • Client • Site 1</div>
+  </div>
+        <script src="../config.js"></script>
+  <script src="../scripts.js"></script>
+  <script>
+    (function () {
+      const url = new URL(location.href);
+      const valetId = url.searchParams.get("valet_id");
+      const siteNo = 1; // fixed for site 1
+
+      const requestBtn = document.getElementById("requestBtn");
+      const carDetailsDiv = document.getElementById("carDetails");
+
+      if (!valetId) {
+        carDetailsDiv.innerText = "Missing valet_id in URL.";
+        return;
+      }
+
+      // Store site_no in localStorage for consistency
+      localStorage.setItem("site_no", siteNo);
+
+      async function loadByValet(valet) {
+        try {
+          const res = await fetch(
+            `${window.APP_CONFIG.API_BASE_URL}/api/site_${siteNo}/client-car/${siteNo}/${encodeURIComponent(valet)}`
+          );
+          const j = await res.json();
+          if (!res.ok) {
+            carDetailsDiv.innerText = j.message || "Not found";
+            requestBtn.style.display = "none";
+            return;
+          }
+          renderCar(j);
+        } catch (err) {
+          carDetailsDiv.innerText = "Server error loading car details";
+          console.error(err);
+          requestBtn.style.display = "none";
+        }
+      }
+
+      function renderCar(car) {
+        carDetailsDiv.innerHTML = `
+          <p><strong>Car No:</strong> ${car.car_no}</p>
+          <p><strong>Valet ID:</strong> ${car.valet_id || "-"}</p>
+          <p><strong>Status:</strong> ${car.status}</p>
+          <p><strong>Phone:</strong> ${car.phone_number || "-"}</p>
+          <p><strong>Parking Spot:</strong> ${car.parking_spot || "Not assigned"}</p>
+        `;
+
+        if (car.status === "parked") {
+          requestBtn.style.display = "inline-flex";
+          requestBtn.disabled = false;
+          requestBtn.onclick = () => requestOut(car.car_no);
+        } else {
+          requestBtn.style.display = "none";
+        }
+      }
+
+      async function requestOut(car_no) {
+        requestBtn.disabled = true; // prevent spam clicks
+        try {
+          const res = await fetch(
+            `${window.APP_CONFIG.API_BASE_URL}/api/site_${siteNo}/car-out-request`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ car_no, site_no: siteNo }),
+            }
+          );
+          const j = await res.json();
+          if (res.ok) {
+            showToast(j.message, "success");
+            playBeep(1000, 110);
+            loadByValet(valetId); // refresh details
+          } else {
+            showToast(j.message || "Error", "error");
+          }
+        } catch (err) {
+          showToast("Server error", "error");
+          console.error(err);
+        } finally {
+          setTimeout(() => (requestBtn.disabled = false), 2000);
+        }
+      }
+
+      // Initial load + polling
+      loadByValet(valetId);
+      setInterval(() => loadByValet(valetId), 2000);
+    })();
+  </script>
+</body>
+</html>

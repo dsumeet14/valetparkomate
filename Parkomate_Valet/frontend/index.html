@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Valet System - Login</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Language Selector -->
+  <div style="text-align: right; margin-bottom: 10px;">
+    <label for="langSelect">🌐 Language: </label>
+    <select id="langSelect">
+      <option value="EN">English</option>
+      <option value="HI">हिन्दी (Hindi)</option>
+    </select>
+  </div>
+
+  <!-- Container -->
+  <div class="container">
+    <!-- Header -->
+    <header class="header card">
+      <div class="h-title">
+        <div class="logo">VM</div>
+        <div>
+          <h3 class="h1">Parkomate — Valet Manager</h3>
+          <div class="small">Sign in to continue</div>
+        </div>
+      </div>
+      <div class="small">Local demo</div>
+    </header>
+
+    <!-- Login Panel -->
+    <div class="login-wrap">
+      <div class="card login-panel">
+        <h2>Welcome back</h2>
+        <p class="small">Enter your site number and credentials.</p>
+
+        <form id="loginForm">
+          <div class="form-row">
+            <input name="site_no" type="number" placeholder="Site No" required />
+            <input name="id" type="text" placeholder="User ID (e.g. dr1, mg1)" required />
+            <input name="password" type="password" placeholder="Password" required />
+          </div>
+          <button class="btn" type="submit">Sign in</button>
+          <div id="message" class="small" style="margin-top:10px;color:var(--danger)"></div>
+        </form>
+
+        <!-- Valet link output -->
+        <div id="valetLinkWrapper" style="display:none; margin-top:10px;">
+          <label>Valet Link:</label>
+          <input type="text" id="valetLink" readonly style="width:100%; font-size:0.9em;" />
+          <button class="btn secondary" type="button" onclick="copyValetLink()">Copy</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">Built with ♥ — Parkomate Demo</footer>
+  </div>
+
+    <script src="./config.js"></script>
+  <script src="./scripts.js"></script>
+</body>
+</html>

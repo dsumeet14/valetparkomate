@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Operator Dashboard - Site 1</title>
+  <link rel="stylesheet" href="../styles.css">
+
+  <style>
+    /* Extra operator-specific tweaks */
+    .translate-bar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .translate-bar button {
+      padding: 6px 12px;
+      border: none;
+      background: #444;
+      color: #fff;
+      cursor: pointer;
+      border-radius: 6px;
+      margin-top: 6px;
+    }
+    .translate-bar button:hover { background: #222; }
+
+    #qrWrap {
+      text-align: center;
+    }
+
+    /* Responsive tweaks */
+    @media (max-width: 600px) {
+      .car-card {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .translate-bar {
+        justify-content: center;
+      }
+      #qrcode {
+        margin: auto;
+      }
+    }
+  </style>
+
+  <!-- QRCode library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <!-- Translator -->
+    <div class="translate-bar">
+      <button id="translateBtn">Translate to Hindi</button>
+    </div>
+
+    <!-- Header -->
+    <header class="header card">
+      <div class="h-title">
+        <div class="logo">OP</div>
+        <div>
+          <h3 class="h1 translatable">Operator (Site 1)</h3>
+          <div class="small translatable">Log car in</div>
+        </div>
+      </div>
+      <div class="small">
+        <span class="translatable">Signed in as</span> <span id="who"></span>
+        <button id="logoutBtn" class="btn secondary">Logout</button>
+      </div>
+    </header>
+
+    <!-- Submit Car Form -->
+    <div class="card" style="margin-top:16px">
+      <h4 class="translatable">Submit Car In</h4>
+      <form id="carInForm" style="margin-top:12px">
+        <div class="form-row">
+          <input type="text" name="car_no" class="translatable" placeholder="Car Number (e.g., MH12AB1234)" required />
+          <input type="text" name="valet_id" class="translatable" placeholder="Valet ID (e.g., VAL001)" required />
+          <input type="tel" name="phone_number" class="translatable" placeholder="Phone Number (Optional)" />
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+          <button class="btn translatable" type="submit">Submit Car In</button>
+          <div id="responseMessage" class="small"></div>
+        </div>
+      </form>
+      <div style="margin-top:12px" class="small translatable">
+        After submitting, a client link & QR will appear.
+      </div>
+      <div id="clientLinkWrap" style="margin-top:12px"></div>
+
+      <!-- QR code container -->
+      <div id="qrWrap" style="margin-top:12px; display:none;">
+        <div id="qrcode"></div>
+        <div style="margin-top:8px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+          <button id="downloadQR" class="btn">Download QR</button>
+          <button id="printQR" class="btn secondary">Print QR</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Today's Cars -->
+    <div class="card" style="margin-top:16px">
+      <h4>Today’s Cars</h4>
+      <div id="todayCars" class="car-list small">Loading...</div>
+    </div>
+
+    <div class="footer translatable">Parkomate • Operator • Site 1</div>
+  </div>
+        <script src="../config.js"></script>
+  <script src="../scripts.js"></script>
+  <script>
+    (function(){
+      const userId = localStorage.getItem('userId');
+      const role = localStorage.getItem('role');
+      const site_no = 1; // fixed for site 1
+
+      if (!userId || role !== 'operator') {
+        alert('Please login as operator.');
+        window.location.href = '../index.html';
+        return;
+      }
+      document.getElementById('who').innerText = `${userId} (Site ${site_no})`;
+
+      // QR functions
+      let qrInstance = null;
+      function showQR(link){
+        const wrap = document.getElementById('qrWrap');
+        const qrEl = document.getElementById('qrcode');
+        qrEl.innerHTML = ''; // clear old
+        qrInstance = new QRCode(qrEl, {
+          text: link,
+          width: 200,
+          height: 200,
+          colorDark: "#000000",
+          colorLight: "#ffffff",
+          correctLevel: QRCode.CorrectLevel.H
+        });
+        wrap.style.display = 'block';
+      }
+
+      function downloadDataUrl(dataUrl, filename){
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+
+      document.getElementById('downloadQR').addEventListener('click', ()=>{
+        const img = document.querySelector('#qrcode img');
+        if(img && img.src){ downloadDataUrl(img.src,'client-qr.png'); return; }
+        const canvas = document.querySelector('#qrcode canvas');
+        if(canvas){ downloadDataUrl(canvas.toDataURL(),'client-qr.png'); return; }
+        alert('QR not found');
+      });
+
+      document.getElementById('printQR').addEventListener('click', ()=>{
+        const qrWrap = document.getElementById('qrcode').innerHTML;
+        const win = window.open('', '_blank');
+        win.document.write('<html><head><title>Print QR</title></head><body style="display:flex;justify-content:center;align-items:center;height:100vh;">'+qrWrap+'</body></html>');
+        win.document.close();
+        win.focus();
+        setTimeout(()=>win.print(), 300);
+      });
+
+      // Handle Car In submission
+      document.getElementById('carInForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+
+        const payload = { 
+          car_no: formData.get('car_no').trim(), 
+          valet_id: formData.get('valet_id').trim(),
+          phone_number: formData.get('phone_number').trim(),
+          site_no
+        };
+
+        const res = await fetch(`${window.APP_CONFIG.API_BASE_URL}/api/site_${site_no}/car-in`, {
+          method: 'POST',
+          headers: { 'Content-Type':'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const j = await res.json();
+        if (res.ok) {
+          showToast(j.message,'success');
+          playBeep(900,120,0.06);
+
+          // Client link
+          const link = `${location.origin}/site_${site_no}/client.html?site_no=${site_no}&valet_id=${encodeURIComponent(payload.valet_id)}`;
+          document.getElementById('clientLinkWrap').innerHTML =
+            `<div class="small translatable">Client link: <a href="${link}" target="_blank">${link}</a></div>`;
+
+          // Auto show QR
+          showQR(link);
+
+          loadToday();
+          e.target.reset();
+        } else {
+          showToast(j.message || 'Error','error');
+        }
+      });
+
+      // Load today's cars
+      async function loadToday() {
+        try {
+          const res = await fetch(`${window.APP_CONFIG.API_BASE_URL}/api/site_${site_no}/admin-car-today/${site_no}`);
+          if (!res.ok) return;
+          const cars = await res.json();
+          const list = document.getElementById('todayCars');
+          if (!cars.length) {
+            list.innerText = 'No cars logged today.';
+            return;
+          }
+          list.innerHTML = '';
+          cars.forEach(c => {
+            const el = document.createElement('div');
+            el.className = 'car-card';
+            el.innerHTML = `
+              <div class="car-left">
+                <div class="car-plate">${c.car_no}</div>
+                <div class="car-meta">
+                  <small>Valet ID: ${c.valet_id || '-'}</small>
+                  <small>Phone: ${c.phone_number || '-'}</small>
+                  <small>Status: ${c.status}</small>
+                  <small>Spot: ${c.parking_spot || '-'}</small>
+                </div>
+              </div>
+            `;
+            list.appendChild(el);
+          });
+        } catch(err) {
+          console.error('Error loading today’s cars', err);
+          document.getElementById('todayCars').innerText = 'Error loading cars.';
+        }
+      }
+
+      // Translation logic
+      async function translateAll(targetLang = "HI") {
+        const elements = document.querySelectorAll('.translatable');
+        for (let el of elements) {
+          const text = el.placeholder || el.innerText;
+          if (!text) continue;
+          try {
+            const res = await fetch('${window.APP_CONFIG.API_BASE_URL}/api/translate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text, targetLang })
+            });
+            const data = await res.json();
+            if (res.ok) {
+              if (el.placeholder) el.placeholder = data.translated;
+              else el.innerText = data.translated;
+            }
+          } catch (err) {
+            console.error("Translate error", err);
+          }
+        }
+      }
+      document.getElementById('translateBtn').addEventListener('click', () => translateAll("HI"));
+
+      loadToday();
+      setInterval(loadToday, 2000);
+    })();
+  </script>
+</body>
+</html>

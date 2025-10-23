@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html>
+<head>
+          <script src="../config.js"></script>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Manager Dashboard - Site 2</title>
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    .seen-dot { display:inline-flex; align-items:center; gap:6px; font-weight:600; }
+    .seen-dot .dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+    .dot.green { background:#16a34a; }
+    .dot.orange { background:#f59e0b; }
+    .dot.gray { background:#9ca3af; }
+    .car-meta small { display:block; color:var(--muted); }
+
+    #searchResultsPanel { display:none; margin-top:12px; padding:12px; position:relative; }
+    #searchResultsPanel h4 { margin:0 0 8px 0; }
+    #closeSearchPanel {
+      position:absolute; top:8px; right:8px;
+      background:none; border:none; font-size:18px; cursor:pointer; font-weight:bold;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <!-- Header -->
+  <header class="header card">
+    <div class="h-title">
+      <div class="logo">MG</div>
+      <div>
+        <h3 class="h1">Manager (Site 2)</h3>
+        <div class="small">Monitor & assign</div>
+      </div>
+    </div>
+    <div class="small">
+      Signed in as <span id="who"></span>
+      <button id="logoutBtn" class="btn secondary">Logout</button>
+      <script src="../scripts.js"></script>
+    </div>
+  </header>
+
+  <!-- Search -->
+  <div style="margin-bottom:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+    <input type="text" id="searchCar" class="input-sm" placeholder="Search by Car No or Valet ID" />
+    <button id="searchBtn" class="btn">Search</button>
+  </div>
+
+  <div id="searchResultsPanel" class="card">
+    <button id="closeSearchPanel">×</button>
+    <h4>Search Results</h4>
+    <div id="searchResultsList" class="car-list"></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="card" style="margin-top:16px">
+    <div class="tabs">
+      <div id="tIn" class="tab active">Car In <span class="badge" id="numIn">0</span></div>
+      <div id="tOut" class="tab">Car Out <span class="badge" id="numOut">0</span></div>
+      <div id="tParked" class="tab">Parked <span class="badge" id="numParked">0</span></div>
+      <div id="tReady" class="tab">Ready to Out <span class="badge" id="numReady">0</span></div>
+    </div>
+
+    <div id="panelIn" class="car-list" style="margin-top:12px"></div>
+    <div id="panelOut" class="car-list" style="margin-top:12px;display:none"></div>
+    <div id="panelParked" class="car-list" style="margin-top:12px;display:none"></div>
+    <div id="panelReady" class="car-list" style="margin-top:12px;display:none"></div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">Parkomate • Manager • Site 2</div>
+</div>
+
+<!-- Driver Modal -->
+<div id="driverModal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 class="modal-title">Select Driver</h3>
+      <button class="modal-close" onclick="closeDriverModal()">×</button>
+    </div>
+    <div id="driverList" class="driver-list"></div>
+    <button onclick="closeDriverModal()" class="btn secondary" style="margin-top:12px;width:100%;">Cancel</button>
+  </div>
+</div>
+
+<script src="../scripts.js"></script>
+<script>
+(function(){
+  const userId = localStorage.getItem("userId");
+  const role = localStorage.getItem("role");
+  const site_no = localStorage.getItem("site_no");
+
+  if (!userId || role !== "manager" || site_no !== "2") {
+    alert("Please login as Site 2 manager.");
+    window.location.href = "../index.html";
+    return;
+  }
+  document.getElementById("who").innerText = `${userId} (Site ${site_no})`;
+
+  // Tabs
+  const tabs = ["In","Out","Parked","Ready"];
+  tabs.forEach(t => document.getElementById("t"+t).addEventListener("click", ()=> switchPanel(t)));
+  function switchPanel(which){
+    document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+    document.querySelectorAll(".car-list").forEach(p=>p.style.display="none");
+    document.getElementById("t"+which).classList.add("active");
+    document.getElementById("panel"+which).style.display="block";
+  }
+
+  let driversList = [];
+  let currentRequests = [];
+  let currentAssignContext = null; // {car_no, type}
+
+  async function fetchDrivers(){
+    try {
+      const res = await fetch(`${window.APP_CONFIG.API_BASE_URL}/api/site_${site_no}/admin-users/${site_no}`);
+      const users = await res.json();
+      driversList = users.filter(u=>u.role==="driver").map(u=>u.id);
+    } catch(err){ console.error("Failed to fetch drivers", err); }
+  }
+
+  async function loadRequests(){
+    await fetchDrivers();
+    try {
+      const res = await fetch(`${window.APP_CONFIG.API_BASE_URL}/api/site_${site_no}/car-requests/${site_no}`);
+      if (!res.ok) return;
+      const requests = await res.json();
+      currentRequests = requests;
+      renderRequests(requests);
+    } catch(err){ console.error("Error loading requests", err); }
+  }
+
+  function renderRequests(requests){
+    const panels = {
+      panelIn: document.getElementById("panelIn"),
+      panelOut: document.getElementById("panelOut"),
+      panelParked: document.getElementById("panelParked"),
+      panelReady: document.getElementById("panelReady")
+    };
+    Object.values(panels).forEach(p=>p.innerHTML="");
+
+    let counts = {in:0,out:0,parked:0,ready:0};
+
+    requests.forEach(req=>{
+      const el = document.createElement("div");
+      el.className = "car-card";
+      const seenParking = req.seen_parking
+        ? `<span class="seen-dot"><span class="dot green"></span>Parking seen</span>`
+        : `<span class="seen-dot"><span class="dot orange"></span>Parking not seen</span>`;
+      const seenBringing = req.seen_bringing
+        ? `<span class="seen-dot"><span class="dot green"></span>Bringing seen</span>`
+        : `<span class="seen-dot"><span class="dot orange"></span>Bringing not seen</span>`;
+
+      el.innerHTML = `
+        <div class="car-left">
+          <div class="car-plate">${req.car_no}</div>
+          <div class="car-meta">
+            <p class="kv">${req.status}</p>
+            <small>Valet ID: ${req.valet_id || "-"}</small>
+            <small>Driver P: ${req.driver_assigned_for_parking || "-"} | Driver B: ${req.driver_assigned_for_bringing || "-"}</small>
+            <small>Parking: ${req.parking_spot || "-"}</small>
+            <div style="margin-top:6px">${seenParking} &nbsp; ${seenBringing}</div>
+          </div>
+        </div>
+        <div class="car-actions"></div>
+      `;
+      const actions = el.querySelector(".car-actions");
+
+      if (req.status==="in_request" || req.status==="assigned_parking") {
+        counts.in++; addDriverAssignUI(actions, req, "in"); panels.panelIn.appendChild(el);
+      } else if (req.status==="out_request" || req.status==="assigned_bringing") {
+        counts.out++; addDriverAssignUI(actions, req, "out"); panels.panelOut.appendChild(el);
+      } else if (req.status==="parked") {
+        counts.parked++; panels.panelParked.appendChild(el);
+      } else if (req.status==="brought_to_client") {
+        counts.ready++;
+        const btn = document.createElement("button");
+        btn.className="btn";
+        btn.innerText="Mark Handed Over";
+        btn.onclick=()=> markHandedOver(req.car_no);
+        actions.appendChild(btn);
+        panels.panelReady.appendChild(el);
+      }
+    });
+
+    document.getElementById("numIn").innerText = counts.in;
+    document.getElementById("numOut").innerText = counts.out;
+    document.getElementById("numParked").innerText = counts.parked;
+    document.getElementById("numReady").innerText = counts.ready;
+  }
+
+  function addDriverAssignUI(actions, req, type){
+    const btn = document.createElement("button");
+    btn.className="btn";
+    btn.innerText="Assign Driver";
+    btn.onclick=()=> openDriverModal(req.car_no, type);
+    actions.appendChild(btn);
+  }
+
+  function openDriverModal(car_no, type){
+    currentAssignContext = {car_no, type};
+    const modal = document.getElementById("driverModal");
+    const list = document.getElementById("driverList");
+    list.innerHTML = "";
+
+  // count jobs per driver (only active ones)
+const jobCounts = {};
+currentRequests.forEach(r=>{
+  if (r.status === "in_request" || r.status === "assigned_parking") {
+    if(r.driver_assigned_for_parking) {
+      jobCounts[r.driver_assigned_for_parking] = (jobCounts[r.driver_assigned_for_parking]||0)+1;
+    }
+  }
+  if (r.status === "out_request" || r.status === "assigned_bringing") {
+    if(r.driver_assigned_for_bringing) {
+      jobCounts[r.driver_assigned_for_bringing] = (jobCounts[r.driver_assigned_for_bringing]||0)+1;
+    }
+  }
+});
+
+    driversList.forEach(d=>{
+      const div = document.createElement("div");
+      div.className="driver-item";
+      div.innerHTML=`<span>${d}</span><small>${jobCounts[d]||0} jobs</small>`;
+      div.onclick=()=> assignDriver(car_no, type, d);
+      list.appendChild(div);
+    });
+
+    modal.style.display="flex";
+  }
+
+  window.closeDriverModal = function(){
+    document.getElementById("driverModal").style.display="none";
+    currentAssignContext=null;
+  };
+
+  async function assignDriver(car_no, type, driver_id){
+    try {
+      const res = await fetch(`${window.APP_CONFIG.API_BASE_URL}/api/site_${site_no}/assign-driver`, {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ car_no, driver_id, site_no })
+      });
+      const j = await res.json();
+      alert(j.message);
+    } catch(err){ alert("Server error"); }
+    closeDriverModal();
+    loadRequests();
+  }
+
+  async function markHandedOver(car_no){
+    if (!confirm(`Mark ${car_no} as Handed Over?`)) return;
+    try {
+      const res = await fetch(`${window.APP_CONFIG.API_BASE_URL}/api/site_${site_no}/mark-handed-over`, {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ car_no, site_no: Number(site_no) })
+      });
+      const j = await res.json();
+      alert(j.message);
+    } catch(err){ alert("Server error"); }
+    loadRequests();
+  }
+
+  // Search
+  const searchPanel = document.getElementById("searchResultsPanel");
+  const searchList = document.getElementById("searchResultsList");
+
+  document.getElementById("searchBtn").addEventListener("click", async ()=>{
+    const query = document.getElementById("searchCar").value.trim();
+    if (!query) { searchPanel.style.display="none"; return loadRequests(); }
+    try {
+      const res = await fetch(`${window.APP_CONFIG.API_BASE_URL}/api/site_${site_no}/search-car/${site_no}/${encodeURIComponent(query)}`);
+      if (!res.ok) { const j = await res.json(); alert(j.message||"No cars found"); return; }
+      const results = await res.json();
+      renderSearchResults(results);
+    } catch(err){ console.error(err); alert("Server error searching cars"); }
+  });
+
+  function renderSearchResults(cars){
+    searchList.innerHTML=""; searchPanel.style.display="block";
+    if (!Array.isArray(cars)) cars=[cars];
+    cars.forEach(req=>{
+      const el=document.createElement("div"); el.className="car-card";
+      const seenParking = req.seen_parking? `<span class="seen-dot"><span class="dot green"></span>Parking seen</span>` : `<span class="seen-dot"><span class="dot orange"></span>Parking not seen</span>`;
+      const seenBringing = req.seen_bringing? `<span class="seen-dot"><span class="dot green"></span>Bringing seen</span>` : `<span class="seen-dot"><span class="dot orange"></span>Bringing not seen</span>`;
+      el.innerHTML=`
+        <div class="car-left">
+          <div class="car-plate">${req.car_no}</div>
+          <div class="car-meta">
+            <p class="kv">${req.status}</p>
+            <small>Valet ID: ${req.valet_id||"-"}</small>
+            <small>Driver P: ${req.driver_assigned_for_parking||"-"} | Driver B: ${req.driver_assigned_for_bringing||"-"}</small>
+            <small>Parking: ${req.parking_spot||"-"}</small>
+            <div style="margin-top:6px">${seenParking} &nbsp; ${seenBringing}</div>
+          </div>
+        </div>
+        <div class="car-actions"></div>
+      `;
+      const actions=el.querySelector(".car-actions");
+      if (req.status==="in_request"||req.status==="assigned_parking") {
+        const btn=document.createElement("button");
+        btn.className="btn";
+        btn.innerText="Assign Driver";
+        btn.onclick=()=> openDriverModal(req.car_no,"in");
+        actions.appendChild(btn);
+      }
+      else if (req.status==="out_request"||req.status==="assigned_bringing") {
+        const btn=document.createElement("button");
+        btn.className="btn";
+        btn.innerText="Assign Driver";
+        btn.onclick=()=> openDriverModal(req.car_no,"out");
+        actions.appendChild(btn);
+      }
+      else if (req.status==="brought_to_client") {
+        const btn=document.createElement("button");
+        btn.className="btn";
+        btn.innerText="Mark Handed Over";
+        btn.onclick=()=> markHandedOver(req.car_no);
+        actions.appendChild(btn);
+      }
+      searchList.appendChild(el);
+    });
+  }
+
+  document.getElementById("closeSearchPanel").addEventListener("click", ()=>{
+    searchPanel.style.display="none";
+    document.getElementById("searchCar").value="";
+  });
+
+  loadRequests();
+  setInterval(loadRequests, 2000);
+})();
+</script>
+</body>
+</html>

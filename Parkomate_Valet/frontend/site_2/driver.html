@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Driver Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="../styles.css" />
+  <style>
+    /* Modal */
+    #requestModal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 9999;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    #requestModal .modal-content {
+      background: #fff;
+      border-radius: 12px;
+      max-width: 500px;
+      margin: 40px auto;
+      padding: 20px;
+    }
+    #requestModal .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    #requestModal .modal-body {
+      margin-top: 20px;
+    }
+
+    /* Tabs row */
+    .tabs {
+      display: flex;
+      gap: 8px;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .tab {
+      flex: 1;
+      text-align: center;
+      cursor: pointer;
+      padding: 10px;
+      border-radius: 8px;
+      background: var(--card);
+      transition: background 0.3s;
+    }
+    .tab.active {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    /* Responsive tweaks */
+    @media (max-width: 768px) {
+      .tab {
+        padding: 8px;
+        font-size: 0.95rem;
+      }
+      #requestModal .modal-content {
+        width: 90%;
+        margin: 20px auto;
+        padding: 16px;
+      }
+    }
+    @media (max-width: 480px) {
+      .tab {
+        font-size: 0.85rem;
+        padding: 6px;
+      }
+      #requestModal .modal-content {
+        width: 95%;
+        margin: 10px auto;
+        padding: 14px;
+      }
+      #requestModal .modal-header h2 {
+        font-size: 1.1rem;
+      }
+      #requestModal .modal-body p {
+        font-size: 0.95rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header card">
+      <div class="h-title">
+        <div class="logo">DR</div>
+        <div>
+          <h3 class="h1">Driver</h3>
+          <div class="small">Your tasks</div>
+        </div>
+      </div>
+      <div class="small">
+        Signed in as <span id="who"></span>
+        <button id="logoutBtn" class="btn secondary">Logout</button>
+        <script src="../config.js"></script>
+        <script src="../scripts.js"></script>
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <div class="card" style="margin-top:16px">
+      <div class="tabs" id="tabs">
+        <div class="tab active" id="tabParking">
+          Parking Requests <span class="badge" id="countParking">0</span>
+        </div>
+        <div class="tab" id="tabOut">
+          Car Out Requests <span class="badge" id="countOut">0</span>
+        </div>
+      </div>
+
+      <!-- Lists -->
+      <div class="car-list" id="parkingList"></div>
+      <div class="car-list" id="outList" style="margin-top:12px"></div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">Parkomate • Driver</div>
+  </div>
+
+  <!-- Modal -->
+  <div id="requestModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Request Details</h2>
+        <button onclick="closeModal()" class="btn secondary">Close</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="../scripts.js"></script>
+  <script>
+    (function () {
+      const driverId = localStorage.getItem("userId");
+      const role = localStorage.getItem("role");
+      const site_no = localStorage.getItem("site_no");
+
+      if (!driverId || role !== "driver") {
+        alert("Please login as driver.");
+        window.location.href = "../index.html";
+        return;
+      }
+      document.getElementById("who").innerText = `${driverId} (Site ${site_no})`;
+
+      // Tab switching
+      document.getElementById("tabParking").addEventListener("click", () => {
+        document.getElementById("tabParking").classList.add("active");
+        document.getElementById("tabOut").classList.remove("active");
+        showLists();
+      });
+      document.getElementById("tabOut").addEventListener("click", () => {
+        document.getElementById("tabOut").classList.add("active");
+        document.getElementById("tabParking").classList.remove("active");
+        showLists();
+      });
+
+      // Load tasks
+      async function loadTasks() {
+        const res = await fetch(
+          `${window.APP_CONFIG.API_BASE_URL}/api/site_${site_no}/driver-tasks/${site_no}/${driverId}`
+        );
+        const tasks = await res.json();
+        const parkList = document.getElementById("parkingList");
+        const outList = document.getElementById("outList");
+        parkList.innerHTML = "";
+        outList.innerHTML = "";
+
+        let pCount = 0, oCount = 0;
+        tasks.forEach((t) => {
+          const el = document.createElement("div");
+          el.className = "car-card";
+          el.innerHTML = `
+            <div class="car-left">
+              <div class="car-plate">${t.car_no}</div>
+              <div class="car-meta">
+                <p class="kv">${t.status}</p>
+                <small>Valet ID: ${t.valet_id || "-"}</small>
+              </div>
+            </div>`;
+          el.onclick = () => openModal(t);
+
+          if (t.status === "assigned_parking") {
+            pCount++; parkList.appendChild(el);
+          } else if (t.status === "assigned_bringing") {
+            oCount++; outList.appendChild(el);
+          }
+        });
+
+        document.getElementById("countParking").innerText = pCount;
+        document.getElementById("countOut").innerText = oCount;
+      }
+
+      function showLists() {
+        const parkActive = document
+          .getElementById("tabParking")
+          .classList.contains("active");
+        document.getElementById("parkingList").style.display = parkActive ? "block" : "none";
+        document.getElementById("outList").style.display = parkActive ? "none" : "block";
+      }
+
+      // Modal handling
+      window.openModal = function (task) {
+        let html = `<p><strong>Car:</strong> ${task.car_no}</p>
+                    <p><strong>Valet ID:</strong> ${task.valet_id || '-'}</p>
+                    <p><strong>Status:</strong> ${task.status}</p>`;
+        if (task.status === "assigned_parking") {
+          html += `<input class="input-sm" id="spot_${task.car_no}" placeholder="Parking spot" /> 
+                   <button class="btn" onclick="markParked('${task.car_no}')">Mark Parked</button>`;
+        } else if (task.status === "assigned_bringing") {
+          html += `<button class="btn" onclick="markBrought('${task.car_no}')">Mark as Brought</button>`;
+        }
+        document.getElementById("modalBody").innerHTML = html;
+        document.getElementById("requestModal").style.display = "block";
+
+        // notify system that driver has seen the request
+        const type = task.status === "assigned_parking" ? "parking" : "bringing";
+        fetch(`${window.APP_CONFIG.API_BASE_URL}/api/site_${site_no}/driver-seen`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            car_no: task.car_no,
+            driver_id: driverId,
+            site_no,
+            type,
+          }),
+        });
+      };
+
+      window.closeModal = function () {
+        document.getElementById("requestModal").style.display = "none";
+      };
+
+      window.markParked = async function (car_no) {
+        const spot = document.getElementById(`spot_${car_no}`).value.trim();
+        if (!spot) {
+          alert("Enter parking spot");
+          return;
+        }
+        const res = await fetch(`${window.APP_CONFIG.API_BASE_URL}/api/site_${site_no}/mark-parked`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ car_no, parking_spot: spot, site_no }),
+        });
+        const j = await res.json();
+        if (res.ok) {
+          showToast(j.message, "success");
+          closeModal();
+        }
+        loadTasks();
+      };
+
+      window.markBrought = async function (car_no) {
+        const res = await fetch(`${window.APP_CONFIG.API_BASE_URL}/api/site_${site_no}/mark-brought`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ car_no, site_no }),
+        });
+        const j = await res.json();
+        if (res.ok) {
+          showToast(j.message, "success");
+          closeModal();
+        }
+        loadTasks();
+      };
+
+      loadTasks();
+      setInterval(loadTasks, 2000);
+      showLists();
+    })();
+  </script>
+</body>
+</html>
